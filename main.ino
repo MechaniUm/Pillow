@@ -13,15 +13,15 @@
 #define FSTPIN 52
 #define SNDPIN 6
 
-#define NUMPIXELS 8
-#define NUMSNDPIXELS 22
+#define smallRingSize 8
+#define bigRingSize 22
 
-Adafruit_NeoPixel fstPixels = Adafruit_NeoPixel(NUMPIXELS, FSTPIN, NEO_GRB + NEO_KHZ800);
-Adafruit_NeoPixel sndPixels = Adafruit_NeoPixel(NUMSNDPIXELS, SNDPIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel smallRing = Adafruit_NeoPixel(smallRingSize, FSTPIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel bigRing = Adafruit_NeoPixel(bigRingSize, SNDPIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel fstStrip = Adafruit_NeoPixel(40, SNDPIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel sndStrip = Adafruit_NeoPixel(40, FSTPIN, NEO_GRB + NEO_KHZ800);
 
-#include <fix_fft.h>
+#include <fix_bigRingCountert.h>
 #define AUDIOPIN 13
 
 const int inputPins[] = {17, 16, 15, 14};
@@ -37,12 +37,12 @@ boolean commandStatus = false;
 boolean servoLoop = false;
 boolean directionLoop = false;
 boolean mainYesNoLoop= false
-boolean Loop10 = false;
-boolean Loop11 = false;
-boolean Loop12 = false;
-boolean Loop77 = false;
-boolean Loop78 = false;
-boolean Loop79 = false;
+boolean mainLoop = false;
+
+
+
+boolean answerTimeLoop1 = false;
+boolean responseLoop = false;
 boolean loopAnswerY = false;
 boolean loopAnswerN = false;
 
@@ -165,33 +165,39 @@ unsigned long Time_Sens9_detection = 0; unsigned long Time_Sens10_detection = 0;
 boolean Lock_Sens1 = false; boolean Lock_Sens2 = false; boolean Lock_Sens3 = false; boolean Lock_Sens4 = false; boolean Lock_Sens5 = false;
 boolean Lock_Sens6 = false; boolean Lock_Sens7 = false; boolean Lock_Sens8 = false; boolean Lock_Sens9 = false; boolean Lock_Sens10 = false;
 
-int ANSWER = 0; // ��� �������� ���������� - ���� 0 �������� ������ ��� ��� ���, 1 ��� ��, 2 ��� ��� //
+int ANSWER = 0;
 int ANSWER_YES = 0;
 int ANSWER_NO = 0;
 
 boolean ANSWERTIME = false;
 
-unsigned long t100 = 0;
-unsigned long t101 = 0;
+
+//timers
+
+unsigned long answerTimer1 = 0;
+unsigned long responseTimer = 0;
+unsigned long LEDTimerStart = 0;
+unsigned long LEDTimerFinish = 0;
 
 
-
-boolean TUPICA = false;
+boolean slowlyThinking = false;
 unsigned long t14 = 0;
 boolean FallAnswer = false;
 
 const int delta_wait_answer = 3000;
-const int time_wait_answer = 20000;
-const int TimeReaction = 100;
+const int responseTimeout = 10000;
+const int timeReaction = 100;
+
+//sensors config
 const int Sensitivity = 8;
 const int Treshold = 5;
+
 const int dark = 1;
-const int Int_flash_LED = 50;
-unsigned long t9 = 0;
-unsigned long t10 = 0;
+const int flashLEDDelta = 50;
+
 boolean LED = false;
-int f = 0;
-int ff = 0;
+int smallRingCounter = 0;
+int bigRingCounter = 0;
 
 int script = 0;
 int script1 = 0;
@@ -260,7 +266,7 @@ void CallSlave()
 	switch (slave)
 	{
 		case 1: signal = "0000" break; //0000//
-		case 2: signal = "1000" break;  //1111//
+		case 2: signal = "1111" break;  //1111//
 		case 3: signal = "1000" break;  //1000//
 		case 4: signal = "1100" break;  //1100//
 		case 5: signal = "1110" break;  //1110//
@@ -279,67 +285,74 @@ void CallSlave()
 	DigitalWriteArray(outputPins, signal, 4)
 }
 
-void setup()
-{
-	Serial.begin(9600);
-	pixels.begin();
-	sndPixels.begin();
-	strip.begin();
-	strip.show();
-	sndStrip.begin();
-	sndStrip.show();
-
-	for (int i = 0; i < 4; i++) {
-		pinMode(inputPins[i], INPUT);
-		pinMode(outputPins[i], OUTPUT);
-	}
-	
-	delay(1000);
-	randomSeed(analogRead(15));
-}
-
-void LEDPanik() {
-	t9 = millis(); if (!LED) { t10 = millis(); LED = true; f++; } if ((t9 - t10) >= Int_flash_LED / 2) LED = false; fstPixels.setPixelColor(f, fstPixels.Color(40, 0, 0)); fstPixels.show();
-	if (f >= NUMPIXELS) { for (f = 8; f >= 0; f--) { fstPixels.setPixelColor(f, fstPixels.Color(0, 0, 0)); fstPixels.show(); } }
-}
 
 void SlowDarkEye()
 {
-	t9 = millis();
-	if (!LED) { t10 = millis(); LED = true; f++; ff++; } if ((t9 - t10) >= Int_flash_LED) LED = false;
-	pixels.setPixelColor(f, fstPixels.Color(0, 0, 0)); fstPixels.show(); if (f >= NUMPIXELS) f = 0;
-	sndPixels.setPixelColor(ff, fstPixels.Color(0, 0, 0)); sndPixels.show(); if (ff >= NUMSNDPIXELS) ff = 0;
+	LEDTimerStart = millis();
+	if (!LED)
+	{
+		LEDTimerFinish = millis();
+		LED = true;
+		smallRingCounter++;
+		bigRingCounter++;
+	}
+	if ((LEDTimerStart - LEDTimerFinish) >= flashLEDDelta)
+		LED = false;
+	smallRing.setPixelColor(smallRingCounter, smallRing.Color(0, 0, 0));
+	smallRing.show();
+	if (smallRingCounter >= smallRingSize)
+		smallRingCounter = 0;
+	bigRing.setPixelColor(bigRingCounter, smallRing.Color(0, 0, 0));
+	bigRing.show();
+	if (bigRingCounter >= bigRingSize)
+		bigRingCounter = 0;
 }
 
-void FastDarkEye() {
-	for (f = 0; f <= 8; f++) { fstPixels.setPixelColor(f, fstPixels.Color(0, 0, 0)); fstPixels.show(); }
-	for (ff = 0; f <= 22; ff++) { sndPixels.setPixelColor(ff, sndPixels.Color(0, 0, 0)); sndPixels.show(); }
+
+void ColorEye(char color)
+{
+	LEDTimerStart = millis();
+	if (!LED) 
+	{
+		LEDTimerFinish = millis();
+		LED = true;
+		smallRingCounter++;
+		bigRingCounter++;
+	}
+	if ((LEDTimerStart - LEDTimerFinish) >= flashLEDDelta)
+		LED = false;
+	switch (color) {
+		case 'g':
+			smallRing.setPixelColor(smallRingCounter, smallRing.Color(0, 40, 0));
+			bigRing.setPixelColor(bigRingCounter, bigRing.Color(0, 40, 0));
+			break;
+		case 'r':
+			smallRing.setPixelColor(smallRingCounter, smallRing.Color(40, 0, 0));
+			bigRing.setPixelColor(bigRingCounter, bigRing.Color(40, 0, 0));
+			break;
+		case 'b':
+			smallRing.setPixelColor(smallRingCounter, smallRing.Color(0, 0, 40));
+			bigRing.setPixelColor(bigRingCounter, bigRing.Color(0, 0, 40));
+			break;
+		default:
+			//white eye
+			smallRing.setPixelColor(smallRingCounter, smallRing.Color(40, 40, 40));
+			smallRing.show();
+			if (smallRingCounter >= smallRingSize)
+				smallRingCounter = 0;
+			return;
+			break;
+	}
+	smallRing.show();
+	bigRing.show();
+	if (smallRingCounter >= smallRingSize) 
+		smallRingCounter = 0;
+	if (bigRingCounter >= bigRingSize)
+		bigRingCounter = 0;
 }
 
-void RedEye() {
-	t9 = millis(); if (!LED) { t10 = millis(); LED = true; f++; ff++; } if ((t9 - t10) >= Int_flash_LED) LED = false;
-	pixels.setPixelColor(f, fstPixels.Color(40, 0, 0)); fstPixels.show();
-	sndPixels.setPixelColor(ff, sndPixels.Color(40, 0, 0)); sndPixels.show();
-	if (f >= NUMPIXELS) f = 0; if (ff >= NUMSNDPIXELS) ff = 0;
-}
 
-void GreenEye() {
-	t9 = millis(); if (!LED) { t10 = millis(); LED = true; f++; ff++; } if ((t9 - t10) >= Int_flash_LED) LED = false;
-	pixels.setPixelColor(f, fstPixels.Color(0, 40, 0)); fstPixels.show();
-	sndPixels.setPixelColor(ff, sndPixels.Color(0, 40, 0)); sndPixels.show();
-	if (f >= NUMPIXELS) f = 0; if (ff >= NUMSNDPIXELS) ff = 0;
-}
-
-void BlueEye() {
-	t9 = millis(); if (!LED) { t10 = millis(); LED = true; f++; ff++; } if ((t9 - t10) >= Int_flash_LED) LED = false;
-	pixels.setPixelColor(f, fstPixels.Color(0, 0, 40)); fstPixels.show();
-	sndPixels.setPixelColor(ff, sndPixels.Color(0, 0, 40)); sndPixels.show();
-	if (f >= NUMPIXELS) f = 0; if (ff >= NUMSNDPIXELS) ff = 0;
-}
-
-void WhiteEye() { t9 = millis(); if (!LED) { t10 = millis(); LED = true; f++; } if ((t9 - t10) >= Int_flash_LED) LED = false; fstPixels.setPixelColor(f, fstPixels.Color(40, 40, 40)); fstPixels.show(); if (f >= NUMPIXELS) f = 0; }
-
-void ClearCash()
+void ClearSensorsCash()
 {
 	Time_Sens1_detection = 0; Time_Sens2_detection = 0; Time_Sens3_detection = 0; Time_Sens4_detection = 0; Time_Sens5_detection = 0;
 	Time_Sens6_detection = 0; Time_Sens7_detection = 0; Time_Sens8_detection = 0; Time_Sens9_detection = 0; Time_Sens10_detection = 0;
@@ -347,51 +360,134 @@ void ClearCash()
 	Lock_Sens6 = false; Lock_Sens7 = false; Lock_Sens8 = false; Lock_Sens9 = false; Lock_Sens10 = false;
 }
 
+
 void YesNoMode()
 {
-	if (!Loop79) { t101 = millis(); Loop79 = true; }
-	if (((millis() - t101) >= time_wait_answer) && ANSWER == 0) { slave = 6; TUPICA = true; BlueEye(); }
+	if (!responseLoop)
+	{
+		responseTimer = millis();
+		responseLoop = true;
+	}
+
+	if (((millis() - responseTimer) >= responseTimeout) && ANSWER == 0)
+	{
+		slave = 6;
+		slowlyThinking = true;
+		ColorEye('b');
+	}
 
 
 	if (ANSWER == 0)
 	{
-		if (!mainYesNoLoop) { t8 = millis(); mainYesNoLoop= true; } if (mainYesNoLoo) { if ((t7 - t8) >= TimeReaction) { mainYesNoLoop= false; } };
+		if (!mainYesNoLoop)
+		{
+			t8 = millis();
+			mainYesNoLoop= true;
+		}
+		
+		if (mainYesNoLoo)
+		{
+			if ((t7 - t8) >= timeReaction)
+				mainYesNoLoop= false;
+		}
+
 		if (!mainYesNoLoop)
 		{
 			D1_F = analogRead(ISens1); D2_F = analogRead(ISens2); D3_F = analogRead(ISens3); D4_F = analogRead(ISens4); D5_F = analogRead(ISens5);
 			D6_F = analogRead(ISens6); D7_F = analogRead(ISens7); D8_F = analogRead(ISens8); D9_F = analogRead(ISens9); D10_F = analogRead(ISens10);
-		} if (mainYesNoLoo)
+		}
+
+		if (mainYesNoLoop)
 		{
 			D1_S = analogRead(ISens1); D2_S = analogRead(ISens2); D3_S = analogRead(ISens3); D4_S = analogRead(ISens4); D5_S = analogRead(ISens5);
 			D6_S = analogRead(ISens6); D7_S = analogRead(ISens7); D8_S = analogRead(ISens8); D9_S = analogRead(ISens9); D10_S = analogRead(ISens10);
 		}
+
 		Delta1 = abs(D1_S - D1_F); Delta2 = abs(D2_S - D2_F); Delta3 = abs(D3_S - D3_F); Delta4 = abs(D4_S - D4_F); Delta5 = abs(D5_S - D5_F);
 		Delta6 = abs(D6_S - D6_F); Delta7 = abs(D7_S - D7_F); Delta8 = abs(D8_S - D8_F); Delta9 = abs(D9_S - D9_F); Delta10 = abs(D10_S - D10_F);
-		if (Delta1 <= Treshold) Delta1 = 0; else if (Delta1 >= Sensitivity && !Lock_Sens1) { Time_Sens1_detection = millis(); Lock_Sens1 = true; }
-		if (Delta2 <= Treshold) Delta2 = 0; else if (Delta2 >= Sensitivity && !Lock_Sens2) { Time_Sens2_detection = millis(); Lock_Sens2 = true; }
-		if (Delta3 <= Treshold) Delta3 = 0; else if (Delta3 >= Sensitivity && !Lock_Sens3) { Time_Sens3_detection = millis(); Lock_Sens3 = true; }
-		if (Delta4 <= Treshold) Delta4 = 0; else if (Delta4 >= Sensitivity && !Lock_Sens4) { Time_Sens4_detection = millis(); Lock_Sens4 = true; }
-		if (Delta5 <= Treshold) Delta5 = 0; else if (Delta5 >= Sensitivity && !Lock_Sens5) { Time_Sens5_detection = millis(); Lock_Sens5 = true; }
-		if (Delta6 <= Treshold) Delta6 = 0; else if (Delta6 >= Sensitivity && !Lock_Sens6) { Time_Sens6_detection = millis(); Lock_Sens6 = true; }
-		if (Delta7 <= Treshold) Delta7 = 0; else if (Delta7 >= Sensitivity && !Lock_Sens7) { Time_Sens7_detection = millis(); Lock_Sens7 = true; }
-		if (Delta8 <= Treshold) Delta8 = 0; else if (Delta8 >= Sensitivity && !Lock_Sens8) { Time_Sens8_detection = millis(); Lock_Sens8 = true; }
-		if (Delta9 <= Treshold) Delta9 = 0; else if (Delta9 >= Sensitivity && !Lock_Sens9) { Time_Sens9_detection = millis(); Lock_Sens9 = true; }
-		if (Delta10 <= Treshold) Delta10 = 0; else if (Delta10 >= Sensitivity && !Lock_Sens10) { Time_Sens10_detection = millis(); Lock_Sens10 = true; }
+		if (Delta1 <= Treshold) Delta1 = 0; else if (Delta1 >= Sensitivity && !Lock_Sens1)
+		{
+			Time_Sens1_detection = millis(); Lock_Sens1 = true;
+		}
+		if (Delta2 <= Treshold) Delta2 = 0; else if (Delta2 >= Sensitivity && !Lock_Sens2)
+		{
+			Time_Sens2_detection = millis(); Lock_Sens2 = true;
+		}
+		if (Delta3 <= Treshold) Delta3 = 0; else if (Delta3 >= Sensitivity && !Lock_Sens3)
+		{
+			Time_Sens3_detection = millis(); Lock_Sens3 = true;
+		}
+		if (Delta4 <= Treshold) Delta4 = 0; else if (Delta4 >= Sensitivity && !Lock_Sens4)
+		{
+			Time_Sens4_detection = millis(); Lock_Sens4 = true;
+		}
+		if (Delta5 <= Treshold) Delta5 = 0; else if (Delta5 >= Sensitivity && !Lock_Sens5)
+		{
+			Time_Sens5_detection = millis(); Lock_Sens5 = true;
+		}
+		if (Delta6 <= Treshold) Delta6 = 0; else if (Delta6 >= Sensitivity && !Lock_Sens6)
+		{
+			Time_Sens6_detection = millis(); Lock_Sens6 = true;
+		}
+		if (Delta7 <= Treshold) Delta7 = 0; else if (Delta7 >= Sensitivity && !Lock_Sens7)
+		{
+			Time_Sens7_detection = millis(); Lock_Sens7 = true;
+		}
+		if (Delta8 <= Treshold) Delta8 = 0; else if (Delta8 >= Sensitivity && !Lock_Sens8)
+		{
+			Time_Sens8_detection = millis(); Lock_Sens8 = true;
+		}
+		if (Delta9 <= Treshold) Delta9 = 0; else if (Delta9 >= Sensitivity && !Lock_Sens9)
+		{
+			Time_Sens9_detection = millis(); Lock_Sens9 = true;
+		}
+		if (Delta10 <= Treshold) Delta10 = 0; else if (Delta10 >= Sensitivity && !Lock_Sens10)
+		{
+			Time_Sens10_detection = millis(); Lock_Sens10 = true;
+		}
 
-		if (((Time_Sens1_detection && Time_Sens2_detection) || (Time_Sens6_detection && Time_Sens7_detection)) > 0 && !loopAnswerY) { ANSWER_YES++; ClearCash(); loopAnswerY = true; }
-		if (((Time_Sens9_detection || Time_Sens10_detection) || (Time_Sens4_detection && Time_Sens5_detection)) > 0 && !loopAnswerN) { ANSWER_NO++; ClearCash(); loopAnswerN = true; }
+		if (((Time_Sens1_detection && Time_Sens2_detection) || (Time_Sens6_detection && Time_Sens7_detection)) > 0 && !loopAnswerY)
+		{
+			ANSWER_YES++; ClearSensorsCash(); loopAnswerY = true;
+		}
+		if (((Time_Sens9_detection || Time_Sens10_detection) || (Time_Sens4_detection && Time_Sens5_detection)) > 0 && !loopAnswerN)
+		{
+			ANSWER_NO++; ClearSensorsCash(); loopAnswerN = true;
+		}
 		if (Delta1 == 0 && Delta2 == 0 && Delta6 == 0 && Delta7 == 0 && loopAnswerY) loopAnswerY = false;
 		if (Delta9 == 0 && Delta10 == 0 && Delta4 == 0 && Delta5 == 0 && loopAnswerN) loopAnswerN = false;
-		if (ANSWER_YES >= 5) { ANSWER = 1; ANSWER_YES = 0; ANSWER_NO = 0; }
-		if (ANSWER_NO >= 5) { ANSWER = 2; ANSWER_YES = 0; ANSWER_NO = 0; }
+		if (ANSWER_YES >= 5)
+		{
+			ANSWER = 1; ANSWER_YES = 0; ANSWER_NO = 0;
+		}
+		if (ANSWER_NO >= 5)
+		{
+			ANSWER = 2; ANSWER_YES = 0; ANSWER_NO = 0;
+		}
 	}
-	if (ANSWER == 2) { slave = 16; RedEye(); ANSWERTIME = true; Loop79 = false; TUPICA = false; }
-	if (ANSWER == 1) { slave = 15; GreenEye(); ANSWERTIME = true; Loop79 = false; TUPICA = false; }
-	if (ANSWER == 0 && !TUPICA) { SlowDarkEye(); }
+	if (ANSWER == 2)
+	{
+		slave = 16; ColorEye('r'); ANSWERTIME = true; responseLoop = false; slowlyThinking = false; ANSWER = 0;
+	}
+	if (ANSWER == 1)
+	{
+		slave = 15; ColorEye('g'); ANSWERTIME = true; responseLoop = false; slowlyThinking = false; ANSWER = 0;
+	}
+	if (ANSWER == 0 && !slowlyThinking)
+	{
+		SlowDarkEye();
+	}
 
-	if (ANSWERTIME && !Loop78) { t100 = millis(); Loop78 = true; }
-	if (Loop78 && ((millis() - t100) >= delta_wait_answer * 2)) { ANSWERTIME = false; ANSWER = 0; Loop78 = false; }
+	if (ANSWERTIME && !answerTimeLoop1)
+	{
+		answerTimer1 = millis(); answerTimeLoop1 = true;
+	}
+	if (answerTimeLoop1 && ((millis() - answerTimer1) >= delta_wait_answer * 2))
+	{
+		ANSWERTIME = false; ANSWER = 0; answerTimeLoop1 = false;
+	}
 }
+
 
 void Shaking()
 {
@@ -406,16 +502,32 @@ void Shaking()
 	}
 	if (SETTINGS && !MOVE)
 	{
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos++; servoLoop = true; } else { pos--; servoLoop = true; } }
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos++; servoLoop = true;
+		} else
+		{
+			pos--; servoLoop = true;
+		}
+		}
 		if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		if (pos <= MIN_deg && !Loop10) {
+		if (pos <= MIN_deg && !mainLoop) {
 			ServoDirection = false; n++; RGB_servo_show();
-			Loop10 = true;
-		} if (pos >= MAX_deg) { ServoDirection = true; Loop10 = false; }
+			mainLoop = true;
+		} if (pos >= MAX_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
 		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo2.write(pos); myservo3.write(pos); myservo4.write(pos);
-		if (n >= count * 2) { DetachServo("1111"); MOVE = true; }
+		if (n >= count * 2)
+		{
+			DetachServo("1111"); MOVE = true;
+		}
 	}
 }
+
 
 void Rounds()
 {
@@ -430,18 +542,55 @@ void Rounds()
 	}
 	if (SETTINGS && !MOVE)
 	{
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos++; servoLoop = true; } else { pos--; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		if (pos <= MIN_deg) { ServoDirection = false;  Loop10 = false; } if (pos >= MAX_deg && !Loop10) { n++; RGB_servo_show(); ServoDirection = true; Loop10 = true; }
-		if (!Servo1_move) { pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); if (n >= 1) Servo1_move = true; }
-		if (!Servo2_move && Servo1_move) { pos = abs(pos); pos = constrain(pos, 1, 179); myservo2.write(pos); if (n >= 2) Servo2_move = true; }
-		if (!Servo3_move && Servo2_move) { pos = abs(pos); pos = constrain(pos, 1, 179); myservo3.write(pos); if (n >= 3) Servo3_move = true; }
-		if (!Servo4_move && Servo3_move) { pos = abs(pos); pos = constrain(pos, 1, 179); myservo4.write(pos); if (n >= 4) Servo4_move = true; }
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos++; servoLoop = true;
+		} else
+		{
+			pos--; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		if (pos <= MIN_deg)
+		{
+			ServoDirection = false;  mainLoop = false;
+		} if (pos >= MAX_deg && !mainLoop)
+		{
+			n++; RGB_servo_show(); ServoDirection = true; mainLoop = true;
+		}
+		if (!Servo1_move)
+		{
+			pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); if (n >= 1) Servo1_move = true;
+		}
+		if (!Servo2_move && Servo1_move)
+		{
+			pos = abs(pos); pos = constrain(pos, 1, 179); myservo2.write(pos); if (n >= 2) Servo2_move = true;
+		}
+		if (!Servo3_move && Servo2_move)
+		{
+			pos = abs(pos); pos = constrain(pos, 1, 179); myservo3.write(pos); if (n >= 3) Servo3_move = true;
+		}
+		if (!Servo4_move && Servo3_move)
+		{
+			pos = abs(pos); pos = constrain(pos, 1, 179); myservo4.write(pos); if (n >= 4) Servo4_move = true;
+		}
 
-		if (Servo1_move && Servo2_move && Servo3_move && Servo4_move) { rounds_count++; n = 0; }
-		if (Servo1_move && Servo2_move && Servo3_move && Servo4_move && rounds_count <= count) { Servo1_move = false; Servo2_move = false; Servo3_move = false; Servo4_move = false; }
-		if (rounds_count >= count) { DetachServo("1111"); MOVE = true; }
+		if (Servo1_move && Servo2_move && Servo3_move && Servo4_move)
+		{
+			rounds_count++; n = 0;
+		}
+		if (Servo1_move && Servo2_move && Servo3_move && Servo4_move && rounds_count <= count)
+		{
+			Servo1_move = false; Servo2_move = false; Servo3_move = false; Servo4_move = false;
+		}
+		if (rounds_count >= count)
+		{
+			DetachServo("1111"); MOVE = true;
+		}
 	}
 }
+
 
 void Hello()
 {
@@ -453,42 +602,68 @@ void Hello()
 	if (SETTINGS && !MOVE && count == 0)
 	{
 		AttachServo("1000");
-		if (pos >= MAX_deg && !Loop10) {
+		if (pos >= MAX_deg && !mainLoop) {
 			ServoDirection = false; n++; RGB_servo_show();
-			Loop10 = true;
+			mainLoop = true;
 		}
-		if (pos <= MIN_deg) { ServoDirection = true; Loop10 = false; }
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); if (n >= 3) { DetachServo("1000"); MOVE = true; }
+		if (pos <= MIN_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); if (n >= 3)
+		{
+			DetachServo("1000"); MOVE = true;
+		}
 	}
 	if (SETTINGS && !MOVE && count == 1)
 	{
 		AttachServo("0100");
-		if (pos >= MAX_deg && !Loop10) {
+		if (pos >= MAX_deg && !mainLoop) {
 			ServoDirection = false; n++;
 			RGB_servo_show();
-			Loop10 = true;
+			mainLoop = true;
 		}
-		if (pos <= MIN_deg) { 
+		if (pos <= MIN_deg)
+		{
+			
 			ServoDirection = true;
-			Loop10 = false;
+			mainLoop = false;
 		}
 		if (!servoLoop) {
 			t2 = millis();
-			if (!ServoDirection) { 
+			if (!ServoDirection)
+			{
+				
 				pos--;
 			 	servoLoop = true;
 			}
-			else { pos++; servoLoop = true; } 
+			else
+			{
+				pos++; servoLoop = true;
+			} 
 		}
 		if ((t1 - t2) >= ServoSpeed)
 			servoLoop = false;
 		pos = abs(pos);
 		pos = constrain(pos, 1, 179);
 		myservo2.write(pos);
-		if (n >= 3) { DetachServo("0100"); MOVE = true; }
+		if (n >= 3)
+		{
+			DetachServo("0100"); MOVE = true;
+		}
 	}
 }
+
 
 void HipHop()
 {
@@ -501,22 +676,56 @@ void HipHop()
 	if (SETTINGS && !MOVE && count == 0)
 	{
 		AttachServo("1010");
-		if (pos >= MAX_deg && !Loop10) {
+		if (pos >= MAX_deg && !mainLoop) {
 			ServoDirection = false; n++; RGB_servo_show();
-			Loop10 = true;
-		} if (pos <= MIN_deg) { ServoDirection = true; Loop10 = false; }
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo3.write(pos); if (n >= 3) { DetachServo("1010"); MOVE = true; }
+			mainLoop = true;
+		} if (pos <= MIN_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo3.write(pos); if (n >= 3)
+		{
+			DetachServo("1010"); MOVE = true;
+		}
 	}
 
 	if (SETTINGS && !MOVE && count == 1)
 	{
 		AttachServo("0101");
-		if (pos >= MAX_deg && !Loop10) { ServoDirection = false; n++; RGB_servo_show(); Loop10 = true; } if (pos <= MIN_deg) { ServoDirection = true; Loop10 = false; }
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		pos = abs(pos); pos = constrain(pos, 1, 179); myservo2.write(pos); myservo4.write(pos); if (n >= 3) { DetachServo("0101"); MOVE = true; }
+		if (pos >= MAX_deg && !mainLoop)
+		{
+			ServoDirection = false; n++; RGB_servo_show(); mainLoop = true;
+		} if (pos <= MIN_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		pos = abs(pos); pos = constrain(pos, 1, 179); myservo2.write(pos); myservo4.write(pos); if (n >= 3)
+		{
+			DetachServo("0101"); MOVE = true;
+		}
 	}
 }
+
 
 void Shell()
 {
@@ -527,11 +736,23 @@ void Shell()
 	}
 	if (SETTINGS && !MOVE)
 	{
-		AttachServo("1111"); if (pos >= MAX_deg && !Loop10) { ServoDirection = false; n++; RGB_servo_show(); Loop10 = true; }
+		AttachServo("1111"); if (pos >= MAX_deg && !mainLoop)
+		{
+			ServoDirection = false; n++; RGB_servo_show(); mainLoop = true;
+		}
 		if (pos <= MIN_deg) {
 			ServoDirection = true;
-			Loop10 = false;
-		} if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } }
+			mainLoop = false;
+		} if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		}
 		if ((t1 - t2) >= ServoSpeed) servoLoop = false;
 		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo2.write(pos); myservo3.write(pos); myservo4.write(pos); if (n >= 2)
 		{
@@ -540,7 +761,8 @@ void Shell()
 	}
 }
 
-void SIT_UP()
+
+void SitUp()
 {
 	t1 = millis();
 	if (!SETTINGS)
@@ -551,23 +773,57 @@ void SIT_UP()
 	if (SETTINGS && !MOVE && count == 0)
 	{
 		AttachServo("1100");
-		if (pos >= MAX_deg && !Loop10) {
+		if (pos >= MAX_deg && !mainLoop) {
 			ServoDirection = false; n++; RGB_servo_show();
-			Loop10 = true;
+			mainLoop = true;
 		}
-		if (pos <= MIN_deg) { ServoDirection = true; Loop10 = false; }
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo2.write(pos); if (n >= 2) { DetachServo("1100"); MOVE = true; }
+		if (pos <= MIN_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo2.write(pos); if (n >= 2)
+		{
+			DetachServo("1100"); MOVE = true;
+		}
 	}
 
 	if (SETTINGS && !MOVE && count == 1)
 	{
 		AttachServo("0011");
-		if (pos >= MAX_deg && !Loop10) { ServoDirection = false; n++; RGB_servo_show(); Loop10 = true; } if (pos <= MIN_deg) { ServoDirection = true; Loop10 = false; }
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		pos = abs(pos); pos = constrain(pos, 1, 179); myservo3.write(pos); myservo4.write(pos); if (n >= 2) { DetachServo("0011"); MOVE = true; }
+		if (pos >= MAX_deg && !mainLoop)
+		{
+			ServoDirection = false; n++; RGB_servo_show(); mainLoop = true;
+		} if (pos <= MIN_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		pos = abs(pos); pos = constrain(pos, 1, 179); myservo3.write(pos); myservo4.write(pos); if (n >= 2)
+		{
+			DetachServo("0011"); MOVE = true;
+		}
 	}
 }
+
 
 void HearsPI()
 {
@@ -580,14 +836,30 @@ void HearsPI()
 	if (SETTINGS && !MOVE)
 	{
 		AttachServo("1100");
-		if (pos >= MAX_deg && !Loop10) {
+		if (pos >= MAX_deg && !mainLoop) {
 			ServoDirection = false; n++; RGB_servo_show();
-			Loop10 = true;
-		} if (pos <= MIN_deg) { ServoDirection = true; Loop10 = false; }
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo2.write(pos); if (n >= 2) { DetachServo("1100"); MOVE = true; }
+			mainLoop = true;
+		} if (pos <= MIN_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		pos = abs(pos); pos = constrain(pos, 1, 179); myservo1.write(pos); myservo2.write(pos); if (n >= 2)
+		{
+			DetachServo("1100"); MOVE = true;
+		}
 	}
 }
+
 
 void LegsPI()
 {
@@ -600,18 +872,40 @@ void LegsPI()
 	if (SETTINGS && !MOVE)
 	{
 		AttachServo("0011");
-		if (pos >= MAX_deg && !Loop10) { ServoDirection = false; n++; RGB_servo_show(); Loop10 = true; } if (pos <= MIN_deg) { ServoDirection = true; Loop10 = false; }
-		if (!servoLoop) { t2 = millis(); if (!ServoDirection) { pos--; servoLoop = true; } else { pos++; servoLoop = true; } } if ((t1 - t2) >= ServoSpeed) servoLoop = false;
-		pos = abs(pos); pos = constrain(pos, 1, 179); myservo3.write(pos); myservo4.write(pos); if (n >= 2) { DetachServo("0011"); MOVE = true; }
+		if (pos >= MAX_deg && !mainLoop)
+		{
+			ServoDirection = false; n++; RGB_servo_show(); mainLoop = true;
+		} if (pos <= MIN_deg)
+		{
+			ServoDirection = true; mainLoop = false;
+		}
+		if (!servoLoop)
+		{
+			t2 = millis(); if (!ServoDirection)
+		{
+			pos--; servoLoop = true;
+		} else
+		{
+			pos++; servoLoop = true;
+		}
+		} if ((t1 - t2) >= ServoSpeed) servoLoop = false;
+		pos = abs(pos); pos = constrain(pos, 1, 179); myservo3.write(pos); myservo4.write(pos); if (n >= 2)
+		{
+			DetachServo("0011"); MOVE = true;
+		}
 	}
 }
 
-void MUSIC_AUTOMAT()
+
+void MusicAutomat()
 {
 	t3 = millis();
 
 	if (!START_MACHINE) {
-		for (b = 0; b < 128; b++) { val = analogRead(AUDIOPIN); data[b] = val; im[b] = 0; } fix_fft(data, im, 7, 0); for (b = 0; b<3; b++) {
+		for (b = 0; b < 128; b++)
+		{
+			val = analogRead(AUDIOPIN); data[b] = val; im[b] = 0;
+		} fix_bigRingCountert(data, im, 7, 0); for (b = 0; b<3; b++) {
 			data[b] = sqrt(data[b] * data[b] + im[b] * im[b]);
 
 			if (b == 0) {
@@ -653,42 +947,87 @@ void MUSIC_AUTOMAT()
 			}
 		}
 
-		if ((t3 - t4) >= light_interval) { t4 = 0; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 0, 0); fstPixels.show(); } for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 0, 0); sndPixels.show(); } }
+		if ((t3 - t4) >= light_interval)
+		{
+			t4 = 0; for (int i = 0; i <= 8; i++)
+		{
+			smallRing.setPixelColor(i, 0, 0, 0); smallRing.show();
+		} for (int i = 0; i <= 22; i++)
+		{
+			bigRing.setPixelColor(i, 0, 0, 0); bigRing.show();
+		}
+		}
 
 
 		if (R_flash) {
-			t4 = millis(); red++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 40, 0, 0); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 40, 0); sndPixels.show(); }
+			t4 = millis(); red++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 40, 0, 0); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 40, 0); bigRing.show();
+			}
 			R_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (G_flash) {
-			t4 = millis(); green++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 40, 0); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 0, 40); sndPixels.show(); }
+			t4 = millis(); green++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 0, 40, 0); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 0, 40); bigRing.show();
+			}
 			G_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (B_flash) {
-			t4 = millis(); blue++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 0, 40); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 40, 0, 0); sndPixels.show(); }
+			t4 = millis(); blue++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 0, 0, 40); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 40, 0, 0); bigRing.show();
+			}
 			B_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (O_flash) {
-			t4 = millis(); orange++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 40, 40, 0); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 40, 40); sndPixels.show(); }
+			t4 = millis(); orange++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 40, 40, 0); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 40, 40); bigRing.show();
+			}
 			O_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (Y_flash) {
-			t4 = millis(); yellow++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 40, 40); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 40, 40, 0); sndPixels.show(); }
+			t4 = millis(); yellow++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 0, 40, 40); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 40, 40, 0); bigRing.show();
+			}
 			Y_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (V_flash) {
-			t4 = millis(); violet++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 40, 0, 40); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 26, 40); sndPixels.show(); }
+			t4 = millis(); violet++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 40, 0, 40); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 26, 40); bigRing.show();
+			}
 			V_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 	}
@@ -699,12 +1038,48 @@ void MUSIC_AUTOMAT()
 	yellow_action = 7;
 	violet_action = 15;
 
-	if (red >= red_action) { START_MACHINE = true; Shaking(); if (n >= count * 2) { red = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (green >= green_action) { START_MACHINE = true; Rounds(); if (rounds_count >= count) { green = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (blue >= blue_action) { START_MACHINE = true; Hello(); if (n >= 3) { Loop10 = false; blue = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (orange >= orange_action) { START_MACHINE = true; HipHop(); if (n >= 3) { orange = 0;  Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (yellow >= yellow_action) { START_MACHINE = true; SIT_UP(); if (n >= 2) { yellow = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (violet >= violet_action) { START_MACHINE = true; Shell(); if (n >= 2) { violet = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
+	if (red >= red_action)
+	{
+		START_MACHINE = true; Shaking(); if (n >= count * 2)
+	{
+		red = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (green >= green_action)
+	{
+		START_MACHINE = true; Rounds(); if (rounds_count >= count)
+	{
+		green = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (blue >= blue_action)
+	{
+		START_MACHINE = true; Hello(); if (n >= 3)
+	{
+		mainLoop = false; blue = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (orange >= orange_action)
+	{
+		START_MACHINE = true; HipHop(); if (n >= 3)
+	{
+		orange = 0;  mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (yellow >= yellow_action)
+	{
+		START_MACHINE = true; SitUp(); if (n >= 2)
+	{
+		yellow = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (violet >= violet_action)
+	{
+		START_MACHINE = true; Shell(); if (n >= 2)
+	{
+		violet = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
 }
 
 
@@ -716,44 +1091,72 @@ label2: script3 = random(0, 3); script4 = random(0, 3); script5 = random(0, 3);
 	if (script3 == 0 && script4 == 0 && script5 == 0) goto label2;
 
 	switch (script) {
-	case 0: {Rp = 0; } break;
-	case 1: {Rp = 20; } break;
-	case 2: {Rp = 40; } break;
+	case 0: {Rp = 0;
+	} break;
+	case 1: {Rp = 20;
+	} break;
+	case 2: {Rp = 40;
+	} break;
 	}
 	switch (script1) {
-	case 0: {Bp = 0; } break;
-	case 1: {Bp = 20; } break;
-	case 2: {Bp = 40; } break;
+	case 0: {Bp = 0;
+	} break;
+	case 1: {Bp = 20;
+	} break;
+	case 2: {Bp = 40;
+	} break;
 	}
 	switch (script2) {
-	case 0: {Gp = 0; } break;
-	case 1: {Gp = 20; } break;
-	case 2: {Gp = 40; } break;
+	case 0: {Gp = 0;
+	} break;
+	case 1: {Gp = 20;
+	} break;
+	case 2: {Gp = 40;
+	} break;
 	}
 	switch (script3) {
-	case 0: {Rp1 = 0; } break;
-	case 1: {Rp1 = 20; } break;
-	case 2: {Rp1 = 40; } break;
+	case 0: {Rp1 = 0;
+	} break;
+	case 1: {Rp1 = 20;
+	} break;
+	case 2: {Rp1 = 40;
+	} break;
 	}
 	switch (script4) {
-	case 0: {Bp1 = 0; } break;
-	case 1: {Bp1 = 20; } break;
-	case 2: {Bp1 = 40; } break;
+	case 0: {Bp1 = 0;
+	} break;
+	case 1: {Bp1 = 20;
+	} break;
+	case 2: {Bp1 = 40;
+	} break;
 	}
 	switch (script5) {
-	case 0: {Gp1 = 0; } break;
-	case 1: {Gp1 = 20; } break;
-	case 2: {Gp1 = 40; } break;
+	case 0: {Gp1 = 0;
+	} break;
+	case 1: {Gp1 = 20;
+	} break;
+	case 2: {Gp1 = 40;
+	} break;
 	}
-	for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, Rp, Bp, Gp); fstPixels.show(); }
-	for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, Rp1, Bp1, Gp1); sndPixels.show(); }
+	for (int i = 0; i <= 8; i++)
+	{
+		smallRing.setPixelColor(i, Rp, Bp, Gp); smallRing.show();
+	}
+	for (int i = 0; i <= 22; i++)
+	{
+		bigRing.setPixelColor(i, Rp1, Bp1, Gp1); bigRing.show();
+	}
 }
 
-void SCANDAL()
+
+void Scandal()
 {
 	t3 = millis();
 	if (!START_MACHINE) {
-		for (b = 0; b < 128; b++) { val = analogRead(AUDIOPIN); data[b] = val; im[b] = 0; } fix_fft(data, im, 7, 0); for (b = 0; b<3; b++) {
+		for (b = 0; b < 128; b++)
+		{
+			val = analogRead(AUDIOPIN); data[b] = val; im[b] = 0;
+		} fix_bigRingCountert(data, im, 7, 0); for (b = 0; b<3; b++) {
 			data[b] = sqrt(data[b] * data[b] + im[b] * im[b]);
 
 			if (b == 0) {
@@ -795,42 +1198,87 @@ void SCANDAL()
 			}
 		}
 
-		if ((t3 - t4) >= light_interval) { t4 = 0; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 0, 0); fstPixels.show(); } for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 0, 0); sndPixels.show(); } }
+		if ((t3 - t4) >= light_interval)
+		{
+			t4 = 0; for (int i = 0; i <= 8; i++)
+		{
+			smallRing.setPixelColor(i, 0, 0, 0); smallRing.show();
+		} for (int i = 0; i <= 22; i++)
+		{
+			bigRing.setPixelColor(i, 0, 0, 0); bigRing.show();
+		}
+		}
 
 
 		if (R_flash) {
-			t4 = millis(); red++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 40, 0, 0); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 40, 0); sndPixels.show(); }
+			t4 = millis(); red++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 40, 0, 0); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 40, 0); bigRing.show();
+			}
 			R_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (G_flash) {
-			t4 = millis(); green++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 40, 0); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 0, 40); sndPixels.show(); }
+			t4 = millis(); green++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 0, 40, 0); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 0, 40); bigRing.show();
+			}
 			G_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (B_flash) {
-			t4 = millis(); blue++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 0, 40); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 40, 0, 0); sndPixels.show(); }
+			t4 = millis(); blue++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 0, 0, 40); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 40, 0, 0); bigRing.show();
+			}
 			B_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (O_flash) {
-			t4 = millis(); orange++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 40, 40, 0); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 40, 40); sndPixels.show(); }
+			t4 = millis(); orange++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 40, 40, 0); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 40, 40); bigRing.show();
+			}
 			O_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (Y_flash) {
-			t4 = millis(); yellow++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 0, 40, 40); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 40, 40, 0); sndPixels.show(); }
+			t4 = millis(); yellow++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 0, 40, 40); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 40, 40, 0); bigRing.show();
+			}
 			Y_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 
 		if (V_flash) {
-			t4 = millis(); violet++; for (int i = 0; i <= 8; i++) { fstPixels.setPixelColor(i, 40, 0, 40); fstPixels.show(); }
-			for (int i = 0; i <= 22; i++) { sndPixels.setPixelColor(i, 0, 26, 40); sndPixels.show(); }
+			t4 = millis(); violet++; for (int i = 0; i <= 8; i++)
+			{
+				smallRing.setPixelColor(i, 40, 0, 40); smallRing.show();
+			}
+			for (int i = 0; i <= 22; i++)
+			{
+				bigRing.setPixelColor(i, 0, 26, 40); bigRing.show();
+			}
 			V_flash = false; BurnLED_R = false; BurnLED_G = false; BurnLED_B = false; BurnLED_Y = false; BurnLED_O = false; BurnLED_V = false;
 		}
 	}
@@ -841,34 +1289,73 @@ void SCANDAL()
 	yellow_action = 2;
 	violet_action = 1;
 
-	if (red >= red_action) { START_MACHINE = true; Shaking(); if (n >= count * 2) { red = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (green >= green_action) { START_MACHINE = true; Rounds(); if (rounds_count >= count) { green = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (blue >= blue_action) { START_MACHINE = true; Hello(); if (n >= 3) { Loop10 = false; blue = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (orange >= orange_action) { START_MACHINE = true; HipHop(); if (n >= 3) { orange = 0;  Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (yellow >= yellow_action) { START_MACHINE = true; SIT_UP(); if (n >= 2) { yellow = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
-	if (violet >= violet_action) { START_MACHINE = true; Shell(); if (n >= 2) { violet = 0; Loop10 = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++; } }
+	if (red >= red_action)
+	{
+		START_MACHINE = true; Shaking(); if (n >= count * 2)
+	{
+		red = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (green >= green_action)
+	{
+		START_MACHINE = true; Rounds(); if (rounds_count >= count)
+	{
+		green = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (blue >= blue_action)
+	{
+		START_MACHINE = true; Hello(); if (n >= 3)
+	{
+		mainLoop = false; blue = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (orange >= orange_action)
+	{
+		START_MACHINE = true; HipHop(); if (n >= 3)
+	{
+		orange = 0;  mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (yellow >= yellow_action)
+	{
+		START_MACHINE = true; SitUp(); if (n >= 2)
+	{
+		yellow = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
+	if (violet >= violet_action)
+	{
+		START_MACHINE = true; Shell(); if (n >= 2)
+	{
+		violet = 0; mainLoop = false; SETTINGS = false; MOVE = false; START_MACHINE = false; COMPLEX++;
+	}
+	}
 }
 
 
-
-void LOVE(uint8_t wait)
+void Love(uint32_t wait)
 {
 	ShowTime++;
 	uint16_t i, j; for (j = 0; j<(Love_Speed + 1) * 5; j++)
 	{
 		for (i = 0; i< fstStrip.numPixels(); i++)
 		{
-			strip.setPixelColor(i, Wheel(((i * (Love_Speed + 1) / fstStrip.numPixels()) + j) & Love_Speed));
+			fstStrip.setPixelColor(i, Wheel(((i * (Love_Speed + 1) / fstStrip.numPixels()) + j) & Love_Speed));
 		}
-		strip.show(); delay(wait);
+		fstStrip.show();
+		delay(wait);
 
 		for (i = 0; i< sndStrip.numPixels(); i++)
 		{
 			sndStrip.setPixelColor(i, Wheel(((i * (Love_Speed + 1) / sndStrip.numPixels()) + j) & Love_Speed));
 		}
-		sndStrip.show(); delay(wait);
+		sndStrip.show();
+		delay(wait);
 	}
 }
+
+
 uint32_t Wheel(byte WheelPos) {
 	WheelPos = Love_Speed - WheelPos; if (WheelPos < Love_Speed1)
 	{
@@ -877,20 +1364,29 @@ uint32_t Wheel(byte WheelPos) {
 	if (WheelPos < Love_Speed2) {
 		WheelPos -= Love_Speed1; return fstStrip.Color(0, WheelPos * 3, Love_Speed - WheelPos * 3);
 		return sndStrip.Color(0, WheelPos * 3, Love_Speed - WheelPos * 3);
-	} WheelPos -= Love_Speed2; return fstStrip.Color(WheelPos * 3, Love_Speed - WheelPos * 3, 0);
+	}
+    WheelPos -= Love_Speed2; return fstStrip.Color(WheelPos * 3, Love_Speed - WheelPos * 3, 0);
 	return sndStrip.Color(WheelPos * 3, Love_Speed - WheelPos * 3, 0);
 }
 
 
-
 void ZeroPoint()
 {
-	DetachServo("1111"); MOVE = false;
-	SETTINGS = false; Loop10 = false; ShowTime = 0; commandStatus = false; COMPLEX = 0; ANSWERTIME = false; ANSWER = 0; Loop78 = false; slave = 1;
+	DetachServo("1111");
+	MOVE = false;
+	SETTINGS = false;
+	mainLoop = false;
+	ShowTime = 0;
+	commandStatus = false;
+	COMPLEX = 0;
+	ANSWERTIME = false;
+	ANSWER = 0;
+	answerTimeLoop1 = false;
+	slave = 1;
 }
 
 
-void BIG_DIRECTOR()
+void BigDirector()
 {
 	if (!readStatus) {
 		readTimer = millis();
@@ -910,28 +1406,125 @@ void BIG_DIRECTOR()
 	}
 	switch (director)
 	{
-		case 2:  { if (commandStatus) { Shaking(); if (MOVE) ZeroPoint(); }} break; //1111//
-		case 3:  { if (commandStatus) { Shell(); if (MOVE) ZeroPoint(); }} break; //1000//
-		case 4:  { if (commandStatus) { Hello(); if (MOVE) ZeroPoint(); }} break; //1100//       
-		case 5:  { if (commandStatus) { Rounds(); if (MOVE) ZeroPoint(); }} break; //1110//
-		case 6:  { if (commandStatus) { HipHop(); if (MOVE) ZeroPoint(); }} break; //0001//
-		case 7:  { if (commandStatus) { HearsPI(); if (MOVE) ZeroPoint(); }} break; //0011//
-		case 8:  { if (commandStatus) { LegsPI(); if (MOVE) ZeroPoint(); }} break; //0111//
-		case 9:  { if (commandStatus && ShowTime < 1) { Love_Speed = 255; Love_Speed1 = 85; Love_Speed2 = 170; LOVE(5); }
-				   else { SlowDarkEye(); ZeroPoint(); }} break; //0101//
-		case 10: { if (commandStatus && ShowTime < 1) { Love_Speed = 40; Love_Speed1 = 20; Love_Speed2 = 120; LOVE(20); }
-				   else { SlowDarkEye(); ZeroPoint(); }} break; //1010//
-		case 11: { if (commandStatus && COMPLEX <= 2) SCANDAL();
-				   else { SlowDarkEye(); ZeroPoint(); }} break; //1001//
-		case 12: { if (commandStatus && COMPLEX <= 2) MUSIC_AUTOMAT();
-				   else { SlowDarkEye(); ZeroPoint(); }} break; //0110//
-		case 13: { commandStatus = false; YesNoMode(); } break; //1011//
-		case 15: { ZeroPoint(); } break; //0100//  
+		case 2: 
+		{
+			if (commandStatus)
+            {
+                Shaking(); if (MOVE) ZeroPoint();
+            }
+        } break; //1111//
+		case 3: 
+		{
+			if (commandStatus)
+            {
+                Shell(); if (MOVE) ZeroPoint();
+            }
+        } break; //1000//
+		case 4: 
+		{
+			if (commandStatus)
+            {
+                Hello(); if (MOVE) ZeroPoint();
+            }
+        } break; //1100//       
+		case 5: 
+		{
+			if (commandStatus)
+            {
+                Rounds(); if (MOVE) ZeroPoint();
+            }
+        } break; //1110//
+		case 6: 
+		{
+			if (commandStatus)
+            {
+                HipHop(); if (MOVE) ZeroPoint();
+            }
+        } break; //0001//
+		case 7: 
+		{
+			if (commandStatus)
+            {
+                HearsPI(); if (MOVE) ZeroPoint();
+            }
+        } break; //0011//
+		case 8: 
+		{
+			if (commandStatus)
+            {
+                LegsPI(); if (MOVE) ZeroPoint();
+            }
+        } break; //0111//
+		case 9: 
+		{
+			if (commandStatus && ShowTime < 1)
+            {
+                Love_Speed = 255; Love_Speed1 = 85; Love_Speed2 = 170; Love(5);
+            }
+            else
+            {
+                SlowDarkEye(); ZeroPoint();
+            }
+        } break; //0101//
+		case 10:
+		{
+			if (commandStatus && ShowTime < 1)
+            {
+                Love_Speed = 40; Love_Speed1 = 20; Love_Speed2 = 120; Love(20);
+            }
+            else
+            {
+                SlowDarkEye(); ZeroPoint();
+            }
+        } break; //1010//
+		case 11:
+		{
+			if (commandStatus && COMPLEX <= 2) Scandal();
+            else
+            {
+                SlowDarkEye(); ZeroPoint();
+            }
+        } break; //1001//
+		case 12:
+		{
+			if (commandStatus && COMPLEX <= 2) MusicAutomat();
+            else
+            {
+                SlowDarkEye(); ZeroPoint();
+            }
+        } break; //0110//
+		case 13:
+		{
+			commandStatus = false; YesNoMode();
+		} break; //1011//
+		case 15:
+		{
+			ZeroPoint();
+		} break; //0100//  
 	}
+}
+
+
+void setup()
+{
+	smallRing.begin();
+	bigRing.begin();
+	fstStrip.begin();
+	fstStrip.show();
+	sndStrip.begin();
+	sndStrip.show();
+
+	for (int i = 0; i < 4; i++) {
+		pinMode(inputPins[i], INPUT);
+		pinMode(outputPins[i], OUTPUT);
+	}
+	
+	delay(1000);
+	randomSeed(analogRead(15));
 }
 
 void loop()
 {
 	CallSlave();
-	BIG_DIRECTOR();
+	BigDirector();
 }
