@@ -327,7 +327,7 @@ int checkSensors() {
     return 0;
   }
   if (sensorValues[0] + sensorValues[1] > sensorValues[0] + sensorValues[3] && sensorValues[0] + sensorValues[1] > sensorValues[1] + sensorValues[2])
-    return 3; // yes-wond
+    return 3; // yes-down
   if (sensorValues[3] + sensorValues[2] > sensorValues[0] + sensorValues[3] && sensorValues[2] + sensorValues[3] > sensorValues[1] + sensorValues[2])
     return 4; // yes-UP
   if (sensorValues[0] + sensorValues[3] > sensorValues[0] + sensorValues[1] && sensorValues[0] + sensorValues[3] > sensorValues[3] + sensorValues[2])
@@ -345,7 +345,7 @@ void yes_no() {
   int tmp = millis();
   if (!ANSWER)
     eye_color = 4;
-  if (abs(dummy_timer - tmp) >= dummy_waiting) {
+  if ((tmp - dummy_timer) >= dummy_waiting) {
     ANSWER = 3;
     eye_color = 3;
     clear();
